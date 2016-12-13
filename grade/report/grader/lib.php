@@ -351,7 +351,7 @@ class grade_report_grader extends grade_report {
      */
     private function setup_sortitemid() {
 
-        global $SESSION;
+        global $SESSION, $PAGE;
 
         if (!isset($SESSION->gradeuserreport)) {
             $SESSION->gradeuserreport = new stdClass();
@@ -388,6 +388,7 @@ class grade_report_grader extends grade_report {
                 }
             }
             $SESSION->gradeuserreport->sortitemid = $this->sortitemid;
+            redirect(new moodle_url($PAGE->url));
         } else {
             // not requesting sort, use last setting (for paging)
 

@@ -125,13 +125,13 @@ $reportname = get_string('pluginname', 'gradereport_grader');
 // Do this check just before printing the grade header (and only do it once).
 grade_regrade_final_grades_if_required($course);
 
-// Print header
-print_grade_page_head($COURSE->id, 'report', 'grader', $reportname, false, $buttons);
-
 //Initialise the grader report object that produces the table
 //the class grade_report_grader_ajax was removed as part of MDL-21562
 $report = new grade_report_grader($courseid, $gpr, $context, $page, $sortitemid);
 $numusers = $report->get_numusers(true, true);
+
+// Print header.
+print_grade_page_head($COURSE->id, 'report', 'grader', $reportname, false, $buttons);
 
 // make sure separate group does not prevent view
 if ($report->currentgroup == -2) {
