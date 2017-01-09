@@ -60,10 +60,11 @@ class block_course_list extends block_list {
             // As this is producing navigation sort order should default to $CFG->navsortmycoursessort instead
             // of using the default.
             if (!empty($CFG->navsortmycoursessort)) {
-                $sortorder = 'visible DESC, ' . $CFG->navsortmycoursessort . ' ASC';
+                $sortorder = 'visible DESC, ' . $CFG->navsortmycoursessort . ' ';
             } else {
-                $sortorder = 'visible DESC, sortorder ASC';
+                $sortorder = 'visible DESC, sortorder ';
             }
+            $sortorder .= empty($CFG->navsortmycoursesordersort) ? 'ASC' : $CFG->navsortmycoursesordersort;
             if ($courses = enrol_get_my_courses(NULL, $sortorder)) {
                 foreach ($courses as $course) {
                     $coursecontext = context_course::instance($course->id);

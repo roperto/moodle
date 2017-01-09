@@ -2016,10 +2016,11 @@ class core_course_renderer extends plugin_renderer_base {
         $output = '';
         if (!empty($CFG->navsortmycoursessort)) {
             // sort courses the same as in navigation menu
-            $sortorder = 'visible DESC,'. $CFG->navsortmycoursessort.' ASC';
+            $sortorder = 'visible DESC,'. $CFG->navsortmycoursessort.' ';
         } else {
-            $sortorder = 'visible DESC,sortorder ASC';
+            $sortorder = 'visible DESC,sortorder ';
         }
+        $sortorder .= empty($CFG->navsortmycoursesordersort) ? 'ASC' : $CFG->navsortmycoursesordersort;
         $courses  = enrol_get_my_courses('summary, summaryformat', $sortorder);
         $rhosts   = array();
         $rcourses = array();
