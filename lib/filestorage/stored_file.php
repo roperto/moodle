@@ -1063,4 +1063,19 @@ class stored_file {
         // Generate the thumbnail.
         return generate_image_thumbnail_from_image($original, $imageinfo, $width, $height);
     }
+
+
+    /**
+     * Ensures the file is readable in sitedata.
+     *
+     * @throws file_exception if file is not readable
+     */
+    public function ensure_content_file_readable() {
+        $path = $this->get_content_file_location();
+        if (!is_readable($path)) {
+            if (!$this->fs->try_content_recovery($this) or !is_readable($path)) {
+                throw new file_exception('storedfilecannotread', '', $path);
+            }
+        }
+    }
 }
