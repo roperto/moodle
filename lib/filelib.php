@@ -1957,6 +1957,7 @@ function readfile_accel($file, $mimetype, $accelerate) {
         header('Accept-Ranges: none');
     }
 
+    $file->ensure_content_file_readable();
     header('Content-Length: '.$filesize);
 
     if ($filesize > 10000000) {
