@@ -55,7 +55,7 @@ abstract class file_system {
      * readfile function which is more efficient.
      *
      * @param stored_file $file The file to serve.
-     * @return void
+     * @return int|bool Size read (will always be $filesize) or false if failed
      */
     public function readfile(stored_file $file) {
         if ($this->is_file_readable_locally_by_storedfile($file, false)) {
@@ -63,7 +63,7 @@ abstract class file_system {
         } else {
             $path = $this->get_remote_path_from_storedfile($file);
         }
-        readfile_allow_large($path, $file->get_filesize());
+        return readfile_allow_large($path, $file->get_filesize());
     }
 
     /**

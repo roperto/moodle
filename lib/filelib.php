@@ -1972,9 +1972,14 @@ function readfile_accel($file, $mimetype, $accelerate) {
 
     // send the whole file content
     if (is_object($file)) {
-        $file->readfile();
+        $readresult = $file->readfile();
     } else {
-        readfile_allow_large($file, $filesize);
+        $readresult = readfile_allow_large($file, $filesize);
+    }
+
+    // Remove content length header if file was not sent.
+    if ($readresult === false) {
+        header_remove('Content-Length');
     }
 }
 
