@@ -362,6 +362,26 @@ class core_admintree_testcase extends advanced_testcase {
     }
 
     /**
+     * Ensures the admin tree is reset (reloaded) after changing user.
+     *
+     * This is a regression test for MDL-59595 which fix an exception being thrown if generating the
+     * admin tree without admin capabilities, then trying to set the page as an external admin page.
+     */
+    public function test_admin_tree_is_reloaded_after_changing_user() {
+        $this->resetAfterTest(true);
+
+        // Force generate the tree with a non admin, which will be incomplete.
+        self::setGuestUser();
+        admin_get_root(false, false);
+
+        // Now switch to an admin and try to use an 'admin' page.
+        self::setAdminUser();
+        admin_externalpage_setup('authtestsettings');
+
+        // No assertion: we want to ensure no exceptions were thrown in the call above.
+    }
+
+    /**
      * Test setting for blocked hosts
      *
      * For testing the admin settings element only. Test for blocked hosts functionality can be found
