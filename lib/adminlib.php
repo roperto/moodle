@@ -7968,12 +7968,13 @@ function admin_externalpage_setup($section, $extrabutton = '', array $extraurlpa
  * @return object admin_root object
  */
 function admin_get_root($reload=false, $requirefulltree=true) {
-    global $CFG, $DB, $OUTPUT;
+    global $CFG, $DB, $OUTPUT, $USER;
 
     static $ADMIN = NULL;
+    static $userid = null;
 
-    if (is_null($ADMIN)) {
-    // create the admin tree!
+    if (is_null($ADMIN) || ($userid != $USER->id)) {
+        $userid = $USER->id;
         $ADMIN = new admin_root($requirefulltree);
     }
 
