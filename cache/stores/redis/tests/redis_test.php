@@ -85,6 +85,8 @@ class cachestore_redis_test extends cachestore_tests {
             $this->markTestSkipped();
         }
 
+        $store->purge();
+
         return $store;
     }
 
@@ -122,5 +124,10 @@ class cachestore_redis_test extends cachestore_tests {
         $this->assertNull($store->check_lock_state('notalock', '123'));
         $this->assertFalse($store->release_lock('lock', '321'));
         $this->assertTrue($store->release_lock('lock', '123'));
+    }
+
+    public function test_it_is_ready_after_connecting() {
+        $store = $this->create_cachestore_redis();
+        self::assertTrue($store->is_ready());
     }
 }
