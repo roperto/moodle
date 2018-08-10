@@ -68,6 +68,8 @@ function assign_reset_userdata($data) {
     global $CFG, $DB;
     require_once($CFG->dirroot . '/mod/assign/locallib.php');
 
+    $teameval_plugin = core_plugin_manager::instance()->get_plugin_info('local_teameval');
+
     $status = array();
     $params = array('courseid'=>$data->courseid);
     $sql = "SELECT a.id FROM {assign} a WHERE a.course=:courseid";
@@ -82,8 +84,14 @@ function assign_reset_userdata($data) {
             $context = context_module::instance($cm->id);
             $assignment = new assign($context, $cm, $course);
             $status = array_merge($status, $assignment->reset_userdata($data));
+
+            if ($teameval_plugin) {
+                $evalcontext = new \mod_assign\evaluation_context($assignment);
+                $status = array_merge($status, $evalcontext->reset_userdata($data));
+            }
         }
     }
+
     return $status;
 }
 
@@ -160,6 +168,11 @@ function assign_reset_course_form_definition(&$mform) {
     $mform->addElement('header', 'assignheader', get_string('modulenameplural', 'assign'));
     $name = get_string('deleteallsubmissions', 'assign');
     $mform->addElement('advcheckbox', 'reset_assign_submissions', $name);
+
+    $teameval_plugin = core_plugin_manager::instance()->get_plugin_info('local_teameval');
+    if ($teameval_plugin) {
+        \mod_assign\evaluation_context::reset_course_form_definition($mform);
+    }
 }
 
 /**
@@ -168,7 +181,12 @@ function assign_reset_course_form_definition(&$mform) {
  * @return array
  */
 function assign_reset_course_form_defaults($course) {
-    return array('reset_assign_submissions'=>1);
+    $defaults = array('reset_assign_submissions'=>1);
+    $teameval_plugin = core_plugin_manager::instance()->get_plugin_info('local_teameval');
+    if ($teameval_plugin) {
+        $defaults = array_merge($defaults, \mod_assign\evaluation_context::reset_course_form_defaults($course));
+    }
+    return $defaults;
 }
 
 /**
@@ -1076,7 +1094,21 @@ function assign_grade_item_update($assign, $grades=null) {
         $assign->courseid = $assign->course;
     }
 
-    $params = array('itemname'=>$assign->name, 'idnumber'=>$assign->cmidnumber);
+    $mod = get_coursemodule_from_instance('assign', $assign->id, $assign->courseid);
+    // the coursemodule might not yet be created.
+    if ($mod !== false) {
+        require_once($CFG->dirroot . '/mod/assign/locallib.php');
+        $cm = context_module::instance($mod->id);
+        $assignment = new assign($cm, null, null);
+    }
+
+    $params = array('itemname'=>$assign->name);
+
+    if (isset($cm)) {
+        $params['idnumber'] = $cm->id;
+    } else {
+        $params['idnumber'] = $assign->cmidnumber;
+    }
 
     // Check if feedback plugin for gradebook is enabled, if yes then
     // gradetype = GRADE_TYPE_TEXT else GRADE_TYPE_NONE.
@@ -1085,10 +1117,6 @@ function assign_grade_item_update($assign, $grades=null) {
     if (isset($assign->gradefeedbackenabled)) {
         $gradefeedbackenabled = $assign->gradefeedbackenabled;
     } else if ($assign->grade == 0) { // Grade feedback is needed only when grade == 0.
-        require_once($CFG->dirroot . '/mod/assign/locallib.php');
-        $mod = get_coursemodule_from_instance('assign', $assign->id, $assign->courseid);
-        $cm = context_module::instance($mod->id);
-        $assignment = new assign($cm, null, null);
         $gradefeedbackenabled = $assignment->is_gradebook_feedback_enabled();
     }
 
@@ -1112,6 +1140,16 @@ function assign_grade_item_update($assign, $grades=null) {
     if ($grades  === 'reset') {
         $params['reset'] = true;
         $grades = null;
+    }
+
+    if (! is_null($grades)) {
+        $teameval_plugin = core_plugin_manager::instance()->get_plugin_info('local_teameval');
+        if ($teameval_plugin) {
+            $evalcontext = new \mod_assign\evaluation_context($assignment);
+            if ($evalcontext->evaluation_enabled()) {
+                $grades = $evalcontext->update_grades($grades);
+            }
+        }
     }
 
     return grade_update('mod/assign',
@@ -1479,6 +1517,13 @@ function assign_pluginfile($course,
         return false;
     }
     send_stored_file($file, 0, 0, $forcedownload, $options);
+}
+
+function assign_get_evaluation_context($cm) {
+    global $CFG;
+    require_once($CFG->dirroot . '/mod/assign/locallib.php');
+    $assign = new assign(context_module::instance($cm->id), $cm, null);
+    return new \mod_assign\evaluation_context($assign);
 }
 
 /**
