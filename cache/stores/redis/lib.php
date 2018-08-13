@@ -39,6 +39,36 @@ defined('MOODLE_INTERNAL') || die();
 class cachestore_redis extends cache_store implements cache_is_key_aware, cache_is_lockable,
         cache_is_configurable, cache_is_searchable {
     /**
+     * Same as Redis::SERIALIZER_NONE (which may not be available).
+     */
+    const SERIALIZER_NONE = 0;
+
+    /**
+     * Same as Redis::SERIALIZER_PHP (which may not be available).
+     */
+    const SERIALIZER_PHP = 1;
+
+    /**
+     * Same as Redis::SERIALIZER_IGBINARY (which may not be available).
+     */
+    const SERIALIZER_IGBINARY = 2;
+
+    /** @var bool */
+    private static $clusteravailable = null;
+
+    /**
+     * Checks if cluster mode is available in PHP.
+     *
+     * @return bool
+     */
+    public static function is_cluster_available() {
+        if (is_null(self::$clusteravailable)) {
+            self::$clusteravailable = class_exists('RedisCluster');
+        }
+        return self::$clusteravailable;
+    }
+
+    /**
      * Name of this store.
      *
      * @var string
@@ -69,7 +99,7 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
     /**
      * Connection to Redis for this store.
      *
-     * @var Redis
+     * @var Redis|RedisCluster
      */
     protected $redis;
 
@@ -78,7 +108,14 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
      *
      * @var int
      */
-    protected $serializer = Redis::SERIALIZER_PHP;
+    protected $serializer = self::SERIALIZER_PHP;
+
+    /**
+     * Redis in cluster mode.
+     *
+     * @var bool
+     */
+    protected $clustermode = false;
 
     /**
      * Determines if the requirements for this type of store are met.
@@ -134,6 +171,9 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
         if (array_key_exists('serializer', $configuration)) {
             $this->serializer = (int)$configuration['serializer'];
         }
+        if (array_key_exists('clustermode', $configuration)) {
+            $this->clustermode = (bool)$configuration['clustermode'];
+        }
         $password = !empty($configuration['password']) ? $configuration['password'] : '';
         $prefix = !empty($configuration['prefix']) ? $configuration['prefix'] : '';
         $this->redis = $this->new_redis($configuration['server'], $prefix, $password);
@@ -146,9 +186,27 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
      * @param string $server The server connection string
      * @param string $prefix The key prefix
      * @param string $password The server connection password
-     * @return Redis
+     * @return Redis|RedisCluster
      */
     protected function new_redis($server, $prefix = '', $password = '') {
+        $redis = $this->clustermode ? $this->new_redis_cluster($server, $password) : $this->new_redis_single($server, $password);
+        if ($this->is_ready()) {
+            $redis->setOption(Redis::OPT_SERIALIZER, $this->serializer);
+            if (!empty($prefix)) {
+                $redis->setOption(Redis::OPT_PREFIX, $prefix);
+            }
+        }
+        return $redis;
+    }
+
+    /**
+     * Create a new Redis instance and connect to the server.
+     *
+     * @param string $server   The server connection string
+     * @param string $password The server connection password
+     * @return Redis
+     */
+    protected function new_redis_single($server, $password) {
         $redis = new Redis();
         $port = null;
         if (strpos($server, ':')) {
@@ -156,19 +214,49 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
             $server = $serverconf[0];
             $port = $serverconf[1];
         }
+
+        $this->isready = false;
         if ($redis->connect($server, $port)) {
             if (!empty($password)) {
                 $redis->auth($password);
             }
-            $redis->setOption(Redis::OPT_SERIALIZER, $this->serializer);
-            if (!empty($prefix)) {
-                $redis->setOption(Redis::OPT_PREFIX, $prefix);
-            }
-            // Database setting option...
             $this->isready = $this->ping($redis);
-        } else {
-            $this->isready = false;
         }
+
+        return $redis;
+    }
+
+    /**
+     * Create a new RedisCluster instance already connect to the server.
+     *
+     * @param string $servers  string The server connection strings separated by newlines.
+     * @param string $password The server connection password
+     * @return RedisCluster
+     */
+    protected function new_redis_cluster($servers, $password) {
+        $servers = explode("\n", $servers);
+
+        $trimmedservers = [];
+        foreach ($servers as $server) {
+            $server = trim($server);
+            if (!empty($server)) {
+                $trimmedservers[] = $server;
+            }
+        }
+
+        $redis = null;
+        $this->isready = false;
+
+        try {
+            $redis = new RedisCluster(null, $trimmedservers);
+            if (!empty($password)) {
+                $redis->auth($password);
+            }
+            $this->isready = true;
+        } catch (RedisClusterException $exception) {
+            debugging($exception->getMessage());
+        }
+
         return $redis;
     }
 
@@ -305,6 +393,10 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
      * @return bool
      */
     public function purge() {
+        if (!$this->isready) {
+            return false;
+        }
+
         return ($this->redis->del($this->hash) !== false);
     }
 
@@ -313,7 +405,12 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
      */
     public function instance_deleted() {
         $this->purge();
-        $this->redis->close();
+        if (!$this->isready) {
+            debugging('Deleted instance not ready.');
+            return;
+        } else {
+            $this->redis->close();
+        }
         unset($this->redis);
     }
 
@@ -449,6 +546,7 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
         );
     }
 
+
     /**
      * Sets form data from a configuration array.
      *
@@ -461,12 +559,12 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
         $data['server'] = $config['server'];
         $data['prefix'] = !empty($config['prefix']) ? $config['prefix'] : '';
         $data['password'] = !empty($config['password']) ? $config['password'] : '';
+        $data['clustermode'] = !empty($config['clustermode']);
         if (!empty($config['serializer'])) {
             $data['serializer'] = $config['serializer'];
         }
         $editform->set_data($data);
     }
-
 
     /**
      * Creates an instance of the store for testing.
@@ -529,11 +627,11 @@ class cachestore_redis extends cache_store implements cache_is_key_aware, cache_
      */
     public static function config_get_serializer_options() {
         $options = array(
-            Redis::SERIALIZER_PHP => get_string('serializer_php', 'cachestore_redis')
+            self::SERIALIZER_PHP => get_string('serializer_php', 'cachestore_redis')
         );
 
-        if (defined('Redis::SERIALIZER_IGBINARY')) {
-            $options[Redis::SERIALIZER_IGBINARY] = get_string('serializer_igbinary', 'cachestore_redis');
+        if (defined('cachestore_redis::SERIALIZER_IGBINARY')) {
+            $options[self::SERIALIZER_IGBINARY] = get_string('serializer_igbinary', 'cachestore_redis');
         }
         return $options;
     }
